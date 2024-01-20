@@ -17,17 +17,22 @@ width, height = 600, 800
 
 
 class SpaceShip(pygame.sprite.Sprite):
-    def __init__(self, x, y):
+    def __init__(self, x, y, count_bullets):
         super().__init__(all_sprites)
-        self.image = pygame.Surface((50, 50))
-        self.image.fill((0, 255, 0))
+        self.image = pygame.transform.scale(load_image('spaceship.png'), (88, 154))
+        self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
         self.on_reload = False
-        self.magazine = 3
-        self.ammo = self.magazine
+        if count_bullets == 0:
+            self.add_magazine = False
+            self.ammo = ''
+        else:
+            self.magazine = count_bullets
+            self.add_magazine = True
+            self.ammo = self.magazine
         self.last_up_time = 0  # Время последнего выстрела
-        self.shoot_cooldown = 1000  # Перезарядка в миллисекундах (1 секунда)
+        self.shoot_cooldown = 500  # Перезарядка в миллисекундах (1 секунда)
         self.text_variable = f"{str(self.ammo)}"
         self.text_sprite = TextSprite(self.text_variable, self.rect.x, self.rect.y - 90, all_sprites,
                                       font_size=80, color=(0, 255, 0), font_path=None)
@@ -49,22 +54,24 @@ class SpaceShip(pygame.sprite.Sprite):
             self.text_sprite.rect.y += 5
 
     def can_shot(self):
-        if self.ammo > 0 and not self.on_reload:
-            self.ammo -= 1
-            if self.ammo == 0:
-                self.last_up_time = pygame.time.get_ticks()
-            return True
-        return False
+        if self.add_magazine:
+            if self.ammo > 0 and not self.on_reload:
+                self.ammo -= 1
+                if self.ammo == 0:
+                    self.last_up_time = pygame.time.get_ticks()
+                return True
+            return False
+        return True
 
     def reload(self, current_time):
-        if self.ammo == 0 or self.on_reload:
-            if current_time - self.last_up_time > self.shoot_cooldown:
-                self.on_reload = True
-                self.ammo += 1
-                self.last_up_time = current_time
-                if self.ammo == self.magazine:
-                    self.on_reload = False
-
+        if self.add_magazine:
+            if self.ammo == 0 or self.on_reload:
+                if current_time - self.last_up_time > self.shoot_cooldown:
+                    self.on_reload = True
+                    self.ammo += 1
+                    self.last_up_time = current_time
+                    if self.ammo == self.magazine:
+                        self.on_reload = False
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -92,8 +99,8 @@ class Meteorite(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__(all_sprites, meteorite_group)
         self.radius = random.randint(40, 100)
-        self.image = pygame.Surface((self.radius, self.radius), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, (255, 255, 255), (20, 20), self.radius)  # Рисуем круг
+        self.image = pygame.transform.scale(load_image('meteorite.png'), (self.radius * 2, self.radius * 2))
+        self.mask = pygame.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
         self.rect.x = random.randint(0, width - self.rect.width)
         self.rect.y = random.randint(-100, -40)
@@ -145,6 +152,25 @@ class TextSprite(pygame.sprite.Sprite):
         self.update_image()
 
 
+class Button:
+    def __init__(self, x, y, width_button, height_button, color, text, path_font=None,  font_size=20):
+        self.rect = pygame.Rect(x, y, width_button, height_button)
+        self.color = color
+        self.text = text
+        if path_font is None:
+            path_font = pygame.font.get_default_font()
+        self.font = pygame.font.Font(path_font, font_size)
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, self.color, self.rect)
+        text_surface = self.font.render(self.text, True, (255, 255, 255))
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        screen.blit(text_surface, text_rect)
+
+    def is_clicked(self, pos):
+        return self.rect.collidepoint(pos)
+
+
 def load_image(name, colorkey=None):
     fullname = os.path.join('data', name)
     if not os.path.isfile(fullname):
@@ -161,7 +187,42 @@ def load_image(name, colorkey=None):
     return image
 
 
-def terminate():
+def choose_level_screen():
+    all_sprites.empty()
+    meteorite_group.empty()
+    bullets_group.empty()
+    # Определение размеров окна
+    screen = pygame.display.set_mode((500, 500))
+    pygame.display.set_caption("Космический корабль")
+    lvl1 = Button(30, 100, 200, 100, (102, 102, 0), 'lvl1')
+    lvl2 = Button(270, 100, 200, 100, (102, 102, 0), 'lvl2')
+    lvl3 = Button(30, 300, 200, 100, (102, 102, 0), 'lvl3')
+    lvl4 = Button(270, 300, 200, 100, (102, 102, 0), 'lvl4')
+    buttons = [lvl1, lvl2, lvl3, lvl4]
+    # Основной игровой цикл
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Если нажата левая кнопка мыши
+                if lvl1.is_clicked(pygame.mouse.get_pos()):
+                    game(3, 0)
+                elif lvl2.is_clicked(pygame.mouse.get_pos()):
+                    game(5, 0)
+                elif lvl3.is_clicked(pygame.mouse.get_pos()):
+                    game(3, 5)
+                elif lvl4.is_clicked(pygame.mouse.get_pos()):
+                    game(5, 6)
+
+
+        screen.fill((0, 0, 102))
+        [i.draw(screen)for i in buttons]
+        all_sprites.draw(screen)
+        pygame.display.flip()
+        clock.tick(60)
+
     pygame.quit()
     sys.exit()
 
@@ -176,7 +237,7 @@ def score_screen():
     query = '''SELECT time, meteors, HitRate from results WHERE id = (SELECT MAX(id) from results)'''
     res = db.fetch_data(query)[0]
 
-    large_font_path = "ComicoroRu_0.ttf"  # Замените путем к вашему файлу шрифта
+    large_font_path = "ComicoroRu_0.ttf"
 
     text_variable = f"Время: {res[0]} с"
     text_variable1 = f"Разбито"
@@ -282,15 +343,16 @@ def start_screen():
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                terminate()
+                pygame.quit()
+                sys.exit()
             elif event.type == pygame.KEYDOWN or \
                     event.type == pygame.MOUSEBUTTONDOWN:
-                game()
+                choose_level_screen()
         pygame.display.flip()
         clock.tick(60)
 
 
-def game():
+def game(count_meteors, reload):
     start = dt.datetime.now()
     count_meteorite_hit = 0
     count_meteorite = 0
@@ -303,8 +365,8 @@ def game():
     all_sprites.empty()
     meteorite_group.empty()
     bullets_group.empty()
-    spaceship = SpaceShip(width // 2, height // 2)
-    [Meteorite() for _ in range(5)]
+    spaceship = SpaceShip(width // 2, height // 2, reload)
+    [Meteorite() for _ in range(count_meteors)]
     # Основной игровой цикл
     running = True
     time.sleep(0.5)
@@ -318,8 +380,10 @@ def game():
                 if spaceship.can_shot():
                     Bullet(spaceship.rect.centerx, spaceship.rect.centery, mouse_x, mouse_y)
                     count_bullets += 1
+
         # Обработка столкновений метеоритов и пуль
-        bullet_meteor_collisions = pygame.sprite.groupcollide(bullets_group, meteorite_group, True, False)
+        bullet_meteor_collisions = pygame.sprite.groupcollide(bullets_group, meteorite_group, True, False,
+                                                              pygame.sprite.collide_mask)
 
         # Пересоздаем метеориты после столкновения
         for meteorite in bullet_meteor_collisions.values():
@@ -329,9 +393,9 @@ def game():
                 count_meteorite += 1
                 Meteorite()
 
-
         # Обработка столкновений метеоритов и корабля
-        spaceship_meteor_collisions = pygame.sprite.spritecollide(spaceship, meteorite_group, False)
+        spaceship_meteor_collisions = pygame.sprite.spritecollide(spaceship, meteorite_group, False,
+                                                                  pygame.sprite.collide_mask)
 
         # Если есть столкновение
         if spaceship_meteor_collisions:
@@ -358,7 +422,6 @@ def game():
         screen.fill((0, 0, 0))
         all_sprites.draw(screen)
         pygame.display.flip()
-        print(current_time)
         clock.tick(60)
 
     pygame.quit()
@@ -367,4 +430,3 @@ def game():
 
 if __name__ == '__main__':
     start_screen()
-# 338
