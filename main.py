@@ -23,17 +23,48 @@ class SpaceShip(pygame.sprite.Sprite):
         self.image.fill((0, 255, 0))
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
+        self.on_reload = False
+        self.magazine = 3
+        self.ammo = self.magazine
+        self.last_up_time = 0  # Время последнего выстрела
+        self.shoot_cooldown = 1000  # Перезарядка в миллисекундах (1 секунда)
+        self.text_variable = f"{str(self.ammo)}"
+        self.text_sprite = TextSprite(self.text_variable, self.rect.x, self.rect.y - 90, all_sprites,
+                                      font_size=80, color=(0, 255, 0), font_path=None)
 
     def update(self):
+        self.text_sprite.update_text(str(self.ammo))
         keys = pygame.key.get_pressed()
         if (keys[pygame.K_LEFT] or keys[pygame.K_a]) and self.rect.x > 0:
             self.rect.x -= 5
+            self.text_sprite.rect.x -= 5
         if (keys[pygame.K_RIGHT] or keys[pygame.K_d]) and self.rect.x < 600 - self.rect.width:
             self.rect.x += 5
+            self.text_sprite.rect.x += 5
         if (keys[pygame.K_UP] or keys[pygame.K_w]) and self.rect.y > 0:
             self.rect.y -= 5
+            self.text_sprite.rect.y -= 5
         if (keys[pygame.K_DOWN] or keys[pygame.K_s]) and self.rect.y < 800 - self.rect.height:
             self.rect.y += 5
+            self.text_sprite.rect.y += 5
+
+    def can_shot(self):
+        if self.ammo > 0 and not self.on_reload:
+            self.ammo -= 1
+            if self.ammo == 0:
+                self.last_up_time = pygame.time.get_ticks()
+            return True
+        return False
+
+    def reload(self, current_time):
+        if self.ammo == 0 or self.on_reload:
+            if current_time - self.last_up_time > self.shoot_cooldown:
+                self.on_reload = True
+                self.ammo += 1
+                self.last_up_time = current_time
+                if self.ammo == self.magazine:
+                    self.on_reload = False
+
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -60,21 +91,38 @@ class Bullet(pygame.sprite.Sprite):
 class Meteorite(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__(all_sprites, meteorite_group)
-        x = random.randint(40, 100)
-        self.image = pygame.Surface((x, x), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, (255, 255, 255), (20, 20), x)  # Рисуем круг
+        self.radius = random.randint(40, 100)
+        self.image = pygame.Surface((self.radius, self.radius), pygame.SRCALPHA)
+        pygame.draw.circle(self.image, (255, 255, 255), (20, 20), self.radius)  # Рисуем круг
         self.rect = self.image.get_rect()
         self.rect.x = random.randint(0, width - self.rect.width)
         self.rect.y = random.randint(-100, -40)
         self.speed = random.randint(6, 10)
+        self.heal = self.radius // 10 - 4
+        self.text_variable = f"{self.heal + 1}"
+        self.text_sprite = TextSprite(self.text_variable, self.rect.x + self.radius / 4, self.rect.y - 90, all_sprites,
+                                      font_size=80, color=(255, 0, 0), font_path=None)
 
     def update(self):
         self.rect.y += self.speed
+        self.text_sprite.rect.y += self.speed
+        self.text_sprite.update_text(str(self.heal + 1))
         # Удаляем метеорит, если он выходит за пределы экрана
         if self.rect.y > height:
-            self.rect.x = random.randint(0, width - self.rect.width)
-            self.rect.y = random.randint(-100, -40)
-            self.speed = random.randint(2, 6)
+            x = random.randint(0, width - self.rect.width)
+            y = random.randint(-100, -40)
+            speed = random.randint(3, 6)
+            self.text_sprite.rect.x = x
+            self.text_sprite.rect.y = y
+            self.rect.x = x - self.radius / 4
+            self.rect.y = y + 90
+            self.speed = speed
+
+    def hit(self):
+        self.heal -= 1
+        if self.heal < 0:
+            self.text_sprite.kill()
+            return True
 
 
 class TextSprite(pygame.sprite.Sprite):
@@ -133,7 +181,7 @@ def score_screen():
     text_variable = f"Время: {res[0]} с"
     text_variable1 = f"Разбито"
     text_variable2 = f"метеоритов: {res[1]}"
-    text_variable3 = f"процент"
+    text_variable3 = f"Процент"
     text_variable4 = f"попаданий: {res[2]}%"
     text_sprite = TextSprite(text_variable, 70, 40, all_sprites1, font_size=80, font_path=large_font_path)
     text_sprite1 = TextSprite(text_variable1, 70, 240, all_sprites1, font_size=80, font_path=large_font_path)
@@ -145,11 +193,10 @@ def score_screen():
     text_sprite.rect.x = -300
     text_sprite3.rect.x = -500
     text_sprite4.rect.x = -500
-    text_sprite1.rect.x = -800
-    text_sprite2.rect.x = -800
+    text_sprite1.rect.x = -700
+    text_sprite2.rect.x = -700
 
     running = True
-    clock = pygame.time.Clock()
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -192,7 +239,6 @@ def end_screen():
     sprite.rect.x = -600
     # text_sprite.rect.x = 0
     running = True
-    clock = pygame.time.Clock()
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -246,7 +292,9 @@ def start_screen():
 
 def game():
     start = dt.datetime.now()
+    count_meteorite_hit = 0
     count_meteorite = 0
+
     count_bullets = 0
     # Определение размеров окна
     screen = pygame.display.set_mode((width, height))
@@ -267,17 +315,20 @@ def game():
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 # Если нажата левая кнопка мыши
                 mouse_x, mouse_y = pygame.mouse.get_pos()
-                # Создаем пулю с координатами корабля и точки нажатия
-                Bullet(spaceship.rect.centerx, spaceship.rect.centery, mouse_x, mouse_y)
-                count_bullets += 1
-
+                if spaceship.can_shot():
+                    Bullet(spaceship.rect.centerx, spaceship.rect.centery, mouse_x, mouse_y)
+                    count_bullets += 1
         # Обработка столкновений метеоритов и пуль
-        bullet_meteor_collisions = pygame.sprite.groupcollide(bullets_group, meteorite_group, True, True)
+        bullet_meteor_collisions = pygame.sprite.groupcollide(bullets_group, meteorite_group, True, False)
 
         # Пересоздаем метеориты после столкновения
-        for _ in bullet_meteor_collisions.values():
-            count_meteorite += 1
-            Meteorite()
+        for meteorite in bullet_meteor_collisions.values():
+            count_meteorite_hit += 1
+            if meteorite[0].hit():
+                meteorite[0].kill()
+                count_meteorite += 1
+                Meteorite()
+
 
         # Обработка столкновений метеоритов и корабля
         spaceship_meteor_collisions = pygame.sprite.spritecollide(spaceship, meteorite_group, False)
@@ -292,7 +343,8 @@ def game():
             a = dt.datetime.now() - start
             db = DatabaseManager()
             query = '''INSERT INTO results (time, meteors, HitRate) VALUES (?, ?, ?)'''
-            params = (a.seconds, count_meteorite, round((count_meteorite / count_bullets) * 100) if count_meteorite != 0 else 0)
+            params = (a.seconds, count_meteorite,
+                      round((count_meteorite_hit / count_bullets) * 100) if count_meteorite_hit != 0 else 0)
             db.execute_query(query, params)
 
             end_screen()
@@ -301,10 +353,13 @@ def game():
             start_screen()
 
         all_sprites.update()
+        current_time = pygame.time.get_ticks()
+        spaceship.reload(current_time)
         screen.fill((0, 0, 0))
         all_sprites.draw(screen)
         pygame.display.flip()
-        pygame.time.Clock().tick(60)
+        print(current_time)
+        clock.tick(60)
 
     pygame.quit()
     sys.exit()
@@ -312,3 +367,4 @@ def game():
 
 if __name__ == '__main__':
     start_screen()
+# 338
