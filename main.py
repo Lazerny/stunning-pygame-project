@@ -21,6 +21,8 @@ class SpaceShip(pygame.sprite.Sprite):
         super().__init__(all_sprites)
         self.frames = []
         sheet = pygame.transform.scale(load_image("spaceship-animation.png"), (400, 200))
+        self.left = pygame.transform.scale(load_image('left.png'), (100, 200))
+        self.right = pygame.transform.scale(load_image('right.png'), (100, 200))
         self.cut_sheet(sheet, 4, 1)
         self.cur_frame = 0
         self.counter = 0
@@ -66,9 +68,11 @@ class SpaceShip(pygame.sprite.Sprite):
         if (keys[pygame.K_LEFT] or keys[pygame.K_a]) and self.rect.x > 0:
             self.rect.x -= 5
             self.text_sprite.rect.x -= 5
+            self.image = self.left
         if (keys[pygame.K_RIGHT] or keys[pygame.K_d]) and self.rect.x < 600 - self.rect.width:
             self.rect.x += 5
             self.text_sprite.rect.x += 5
+            self.image = self.right
         if (keys[pygame.K_UP] or keys[pygame.K_w]) and self.rect.y > 0:
             self.rect.y -= 5
             self.text_sprite.rect.y -= 5
@@ -105,7 +109,6 @@ class Bullet(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = (start_x, start_y)
 
-        # Вычисляем угол и расстояние до цели
         angle = math.atan2(target_y - start_y, target_x - start_x)
         self.dx = math.cos(angle) * 10
         self.dy = math.sin(angle) * 10
@@ -130,7 +133,7 @@ class Meteorite(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = random.randint(0, width - self.rect.width)
         self.rect.y = random.randint(-100, -40)
-        self.speed = random.randint(6, 10)
+        self.speed = random.randint(4, 9)
         self.heal = self.radius // 10 - 4
         self.text_variable = f"{self.heal + 1}"
         self.text_sprite = TextSprite(self.text_variable, self.rect.x + self.radius / 4, self.rect.y - 90, all_sprites,
@@ -211,6 +214,7 @@ class Button:
         self.rect = pygame.Rect(x, y, width_button, height_button)
         self.color = color
         self.text = text
+        self.can_click_flag = True
         if path_font is None:
             path_font = pygame.font.get_default_font()
         self.font = pygame.font.Font(path_font, font_size)
@@ -222,7 +226,12 @@ class Button:
         screen.blit(text_surface, text_rect)
 
     def is_clicked(self, pos):
-        return self.rect.collidepoint(pos)
+        if self.can_click_flag:
+            return self.rect.collidepoint(pos)
+
+    def can_click(self, flag):
+        self.can_click_flag = flag
+        return flag
 
 
 def load_image(name, colorkey=None):
@@ -241,6 +250,67 @@ def load_image(name, colorkey=None):
     return image
 
 
+def history_screen():
+    screen = pygame.display.set_mode((width, height))
+    db = DatabaseManager()
+    font_size = 30
+    font = pygame.font.Font(None, font_size)
+
+    # Заголовок таблицы
+    title_text = font.render("Match history", True, (255, 255, 255))
+    title_rect = title_text.get_rect(center=(width // 2, 50))
+
+    query = "select id, time, meteors, hitrate, level from Results"
+    results = db.fetch_data(query)[::-1]
+
+    row_height = 40
+    back_button = Button(50, 600, 100, 50, (102, 102, 0), '<-')
+    next_button = Button(450, 600, 100, 50, (102, 102, 0), '->')
+    go_button = Button(225, 700, 125, 50, (102, 102, 0), 'Вернуться')
+    a = 0
+    b = 10
+
+    def show_result():
+        y_position = 100
+        for result in results[a:b]:
+            result_text = font.render(
+                f"{result[0]}. Time: {result[1]}s, Meteors: {result[2]}, Hit Rate: {result[3]}%, Level: {result[4]}",
+                True,
+                (255, 255, 255))
+            result_rect = result_text.get_rect(center=(width // 2, y_position))
+            screen.blit(result_text, result_rect)
+            y_position += row_height
+
+    show_result()
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = pygame.mouse.get_pos()
+                if back_button.is_clicked(pos):
+                    a += 10
+                    b += 10
+                elif next_button.is_clicked(pos):
+                    a -= 10
+                    b -= 10
+                elif go_button.is_clicked(pos):
+                    choose_level_screen()
+        pygame.display.flip()
+        screen.fill((0, 0, 0))
+        screen.blit(title_text, title_rect)
+        show_result()
+        go_button.draw(screen)
+        if back_button.can_click(b < len(results)):
+            back_button.draw(screen)
+        if next_button.can_click(a != 0):
+            next_button.draw(screen)
+
+    pygame.quit()
+    sys.exit()
+
+
 def choose_level_screen():
     all_sprites.empty()
     meteorite_group.empty()
@@ -252,8 +322,9 @@ def choose_level_screen():
     lvl2 = Button(270, 100, 200, 100, (102, 102, 0), 'lvl2')
     lvl3 = Button(30, 300, 200, 100, (102, 102, 0), 'lvl3')
     lvl4 = Button(270, 300, 200, 100, (102, 102, 0), 'lvl4')
-    buttons = [lvl1, lvl2, lvl3, lvl4]
-    # Основной игровой цикл
+    history = Button(270, 15, 200, 50, (200, 102, 0), 'История матчей')
+    buttons = [lvl1, lvl2, lvl3, lvl4, history]
+
     running = True
     while running:
         for event in pygame.event.get():
@@ -261,14 +332,17 @@ def choose_level_screen():
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 # Если нажата левая кнопка мыши
-                if lvl1.is_clicked(pygame.mouse.get_pos()):
-                    game(3, 0)
-                elif lvl2.is_clicked(pygame.mouse.get_pos()):
-                    game(5, 0)
-                elif lvl3.is_clicked(pygame.mouse.get_pos()):
-                    game(3, 5)
-                elif lvl4.is_clicked(pygame.mouse.get_pos()):
-                    game(5, 6)
+                pos = pygame.mouse.get_pos()
+                if lvl1.is_clicked(pos):
+                    game(3, 0, 1)
+                elif lvl2.is_clicked(pos):
+                    game(5, 0, 2)
+                elif lvl3.is_clicked(pos):
+                    game(3, 5, 3)
+                elif lvl4.is_clicked(pos):
+                    game(5, 6, 4)
+                elif history.is_clicked(pos):
+                    history_screen()
 
         screen.fill((0, 0, 102))
         [i.draw(screen) for i in buttons]
@@ -372,7 +446,10 @@ def end_screen():
 
 def start_screen():
     screen = pygame.display.set_mode((500, 500))
-    intro_text = ["Spaceship"]
+    intro_text = ["Spaceship",
+                  '',
+                  "Управление:",
+                  "стрелочки и wasd"]
     pygame.display.set_caption("Spaceship")
     fon = pygame.transform.scale(load_image('fon.jpg'), (500, 500))
     screen.blit(fon, (0, 0))
@@ -399,27 +476,26 @@ def start_screen():
         clock.tick(60)
 
 
-def game(count_meteors, reload):
+def game(count_meteors, reload, level):
     start = dt.datetime.now()
     count_meteorite_hit = 0
     count_meteorite = 0
     count_bullets = 0
-    # Определение размеров окна
-    screen = pygame.display.set_mode((width, height))
 
+    screen = pygame.display.set_mode((width, height))
     meteor_animation_picture = load_image("meteor-animation.png")
     meteor_animation_destroying = load_image("destroing-meteor.png")
     shoot_sound = pygame.mixer.Sound("data/bezzvuchnyiy-vyistrel-s-glushitelem.mp3")
     collision_sound = pygame.mixer.Sound("data/gluhoy-zvuk-ne-silnogo-stolknoveniya.mp3")
     end_sound = pygame.mixer.Sound('data/avtomobilnaya-avariya-kuski-otletayuschego-metalla-34427_giZ0TsQh.mp3')
     pygame.display.set_caption("Космический корабль")
-    # Создание объекта космического корабля
+
     all_sprites.empty()
     meteorite_group.empty()
     bullets_group.empty()
     spaceship = SpaceShip(width // 2, height // 2, reload)
     [Meteorite(meteor_animation_picture, meteor_animation_destroying) for _ in range(count_meteors)]
-    # Основной игровой цикл
+
     running = True
     time.sleep(0.5)
     while running:
@@ -453,16 +529,12 @@ def game(count_meteors, reload):
 
         # Если есть столкновение
         if spaceship_meteor_collisions:
-            # нужна аниамция разрушения корабля
             end_sound.play()
-            for i in range(99999):
-                # print('Анимация разрушения корабля')
-                break
             duration_game = dt.datetime.now() - start
             db = DatabaseManager()
-            query = '''INSERT INTO results (time, meteors, HitRate) VALUES (?, ?, ?)'''
+            query = '''INSERT INTO results (time, meteors, HitRate, level) VALUES (?, ?, ?, ?)'''
             params = (duration_game.seconds, count_meteorite,
-                      round((count_meteorite_hit / count_bullets) * 100) if count_meteorite_hit != 0 else 0)
+                      round((count_meteorite_hit / count_bullets) * 100) if count_meteorite_hit != 0 else 0, level)
             db.execute_query(query, params)
 
             end_screen()
